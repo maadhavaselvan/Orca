@@ -48,11 +48,11 @@ public class Orcas_Ai
                 .baseUrl("https://router.huggingface.co/v1") // <-- This is the new, correct endpoint
                 .modelName("Qwen/Qwen2.5-7B-Instruct")
                 .build();
-        ChatMessage system = systemMessage("Be kind ");
-        ChatMessage user = userMessage("who is Professor Dr H K Sardana in one line" );
-        ChatResponse geminiResponse = gemini.chat(ChatRequest.builder()
-                .messages(system,user)
-                .build());
+        Scanner sc=new Scanner(System.in);
+        System.out.print("Enter the behaviour you want the Ai to have:");
+        ChatMessage system = systemMessage(sc.nextLine());
+        System.out.print("Enter the prompt:");
+        ChatMessage user = userMessage(sc.nextLine());
         ChatResponse groqResponse = groq.chat(ChatRequest.builder()
                 .messages(system, user)
                 .build());
@@ -68,8 +68,6 @@ public class Orcas_Ai
         ChatResponse huggingfaceResponse = huggingface.chat(ChatRequest.builder()
                 .messages(system, user)
                 .build());
-        System.out.println("=================================================================Gemini================================================================");
-        System.out.println(geminiResponse.aiMessage().text());
         System.out.println("=================================================================Groq=================================================================");
         System.out.println(groqResponse.aiMessage().text());
         System.out.println("================================================================Cohere================================================================");
@@ -81,6 +79,12 @@ public class Orcas_Ai
         System.out.println("================================================================Hugging Face================================================================");
         System.out.println(huggingfaceResponse.aiMessage().text());
         System.out.println("=======================================================================================================================================");
-
+        system = systemMessage("I will you give you the responses of 5 ai to a question asked by one user select the best one out of that if one of them is best say which one is best and display the message to user which the best message ");
+        user = userMessage("Question asked by user:"+user+"    Groq"+groqResponse.aiMessage().text()+"  Cohere:"+cohereResponse.aiMessage().text()+"  Mistral:"+mistralResponse.aiMessage().text()+"   Cloud Flare:"+cloudflareResponse.aiMessage().text()+"   Hugging Face:"+huggingfaceResponse.aiMessage().text());
+        ChatResponse geminiResponse = gemini.chat(ChatRequest.builder()
+                .messages(system,user)
+                .build());
+        System.out.println("=================================================================Gemini================================================================");
+        System.out.println(geminiResponse.aiMessage().text());
     }
 }
