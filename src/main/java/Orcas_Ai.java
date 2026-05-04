@@ -17,12 +17,18 @@ import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.model.workersai.WorkersAiChatModel;
 
 import java.net.URI;
-import java.net.http.HttpClient;
+import java.net.http.HttpClient;// Don't forget to add multithreading
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Map;
 import java.util.Scanner;
+import dev.langchain4j.memory.ChatMemory;
+import dev.langchain4j.memory.chat.TokenWindowChatMemory;
+import dev.langchain4j.model.openai.OpenAiTokenCountEstimator;
+import java.util.List;
+import java.util.ArrayList;
+import static dev.langchain4j.data.message.AiMessage.aiMessage;
 class Ai {
     ChatModel Ai;
     ChatResponse Respond(ChatMessage system, ChatMessage user)
@@ -31,16 +37,22 @@ class Ai {
                 .messages(system, user)
                 .build());
     }
+    ChatResponse Respond(List<ChatMessage> user)
+    {
+        return Ai.chat(ChatRequest.builder()
+                .messages(user)
+                .build());
+    }
 }
 class OpenAiChat extends Ai
 {
     OpenAiChat(String name,String baseUrl,String modelName)
     {
-            this.Ai=OpenAiChatModel.builder()
-                    .baseUrl(baseUrl)
-                    .apiKey(System.getenv(name.toUpperCase()+"_API_KEY"))
-                    .modelName(modelName)
-                    .build();
+        this.Ai=OpenAiChatModel.builder()
+                .baseUrl(baseUrl)
+                .apiKey(System.getenv(name.toUpperCase()+"_API_KEY"))
+                .modelName(modelName)
+                .build();
     }
 }
 class dedicatedAiChat extends Ai
@@ -77,6 +89,57 @@ class dedicatedAiChat extends Ai
 
 public class Orcas_Ai
 {
+    static ChatMemory memory = TokenWindowChatMemory.builder()
+            .maxTokens(4000, new OpenAiTokenCountEstimator("gpt-3.5-turbo"))
+            .build();    static String Ai_Decision(Ai[] AllAi,ChatMessage system)
+    {
+        Scanner sc=new Scanner(System.in);
+        System.out.print("Enter the prompt:");
+        ChatMessage user = userMessage(sc.nextLine());
+        String UMessage = "Question asked by user: " + ((dev.langchain4j.data.message.UserMessage) user).singleText();
+        memory.add(user);
+        List<ChatMessage> history = memory.messages();
+        List<ChatMessage> safeHistory = new ArrayList<>();
+        for (ChatMessage msg : history) {
+            if (msg instanceof dev.langchain4j.data.message.AiMessage) {
+                String previousAiText = ((dev.langchain4j.data.message.AiMessage) msg).text();
+                safeHistory.add(userMessage("Assistant previously said: " + previousAiText));
+            }
+            else {
+                safeHistory.add(msg);
+            }
+        }
+        safeHistory.add(system);
+        for (int i=0;i<AllAi.length-1;i++)
+        {
+
+            UMessage+="Answer "+(i+1)+": "+(AllAi[i].Respond(safeHistory).aiMessage().text());
+        }
+        List<ChatMessage> judgeContext = new ArrayList<>();
+        system = systemMessage("You are a response evaluator. You will receive a user question followed by 5 AI-generated answers.\n" +
+                "\n" +
+                "Your job is to return ONLY the single best answer as-is, word for word.\n" +
+                "\n" +
+                "Use these criteria to judge:\n" +
+                "- Accuracy: Is the answer factually correct?\n" +
+                "- Completeness: Does it fully address what the user asked?\n" +
+                "- Clarity: Is it easy to understand?\n" +
+                "- Conciseness: Does it avoid unnecessary filler or repetition?\n" +
+                "\n" +
+                "Rules you must follow:\n" +
+                "- Do NOT add any introduction like \"Here is the best answer\"\n" +
+                "- Do NOT add any explanation of why you chose it\n" +
+                "- Do NOT modify, summarize or improve the chosen answer\n" +
+                "- Do NOT combine multiple answers together\n" +
+                "- Return ONLY the chosen answer and nothing else ");
+        judgeContext.add(system);
+        judgeContext.add(userMessage(UMessage));
+        String finalOutput=AllAi[AllAi.length-1].Respond(judgeContext).aiMessage().text();
+        memory.add(aiMessage(finalOutput));
+        System.out.println(finalOutput);
+        sc.close();
+        return finalOutput;
+    }
     public static void main(String[] args) {
         dedicatedAiChat gemini=new dedicatedAiChat("gemini","gemini-2.5-flash");
         OpenAiChat groq=new OpenAiChat("groq","https://api.groq.com/openai/v1","llama-3.1-8b-instant");
@@ -87,22 +150,34 @@ public class Orcas_Ai
         Scanner sc=new Scanner(System.in);
         System.out.print("Enter the behaviour you want the Ai to have:");
         ChatMessage system = systemMessage(sc.nextLine());
-        System.out.print("Enter the prompt:");
-        ChatMessage user = userMessage(sc.nextLine());
         Ai[] AllAi={groq,cohere,mistral,cloudflare,huggingface,gemini};
-        String UMessage="Question asked by user:"+user;
-        for (int i=0;i<AllAi.length-1;i++)
+        String finalOutput;
+        while (true)
         {
-           UMessage+=(AllAi[i].Respond(system,user).aiMessage().text());
+            finalOutput=Orcas_Ai.Ai_Decision(AllAi,system);
+            String a;
+            while (true) {
+                System.out.print("Is the above output satisfactory(enter yes/no):");
+                a= sc.nextLine();
+                if (a.equalsIgnoreCase("yes")) {
+                    break;
+                }
+                else if (a.equalsIgnoreCase("no")) {
+                    break;
+                }
+                else{
+                    System.out.println("Please Enter yes or no only");
+                }
+            }
+            if(a.equalsIgnoreCase("yes"))
+                break;
+            System.out.println("Please enter the changes you want in the below prompt");
         }
-        system = systemMessage("I will you give you the responses of 5 ai to a question asked by one user select the best one out of that and dont tell the reason just repeat the best one ");
-        user = userMessage(UMessage);
-        String finalOutput=AllAi[AllAi.length-1].Respond(system,user).aiMessage().text();
-        System.out.println(finalOutput);
         if (finalOutput.length() > 1800) {
             finalOutput = finalOutput.substring(0, 1800);
         }
         System.out.println("Dispatching output to Discord...");
+        sc.close();
         Main.sendMessage(finalOutput);
     }
 }
@@ -148,14 +223,5 @@ class Main {
         } catch (Exception e) {
             System.err.println("[EXCEPTION] Error dispatching webhook: " + e.getMessage());
         }
-    }
-
-    // This is how you would call it from your project
-    public static void test(String[] args) {
-        // Simulation of your Judge AI result
-        String finalOutput = "Nee waste suriya.";
-
-        System.out.println("Dispatching output to Discord...");
-        sendMessage(finalOutput);
     }
 }
