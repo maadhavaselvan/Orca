@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import static dev.langchain4j.data.message.AiMessage.aiMessage;
 class Ai {
     ChatModel Ai;
+    String name;
     ChatResponse Respond(ChatMessage system, ChatMessage user)
     {
         return Ai.chat(ChatRequest.builder()
@@ -48,6 +49,7 @@ class OpenAiChat extends Ai
 {
     OpenAiChat(String name,String baseUrl,String modelName)
     {
+        this.name=name;
         this.Ai=OpenAiChatModel.builder()
                 .baseUrl(baseUrl)
                 .apiKey(System.getenv(name.toUpperCase()+"_API_KEY"))
@@ -59,6 +61,7 @@ class dedicatedAiChat extends Ai
 {
     dedicatedAiChat(String name,String modelName)
     {
+        this.name=name;
         switch (name.toLowerCase()) {
             case "gemini":
             case "google":
@@ -89,11 +92,11 @@ class dedicatedAiChat extends Ai
 
 public class Orcas_Ai
 {
+    static Scanner sc=new Scanner(System.in);
     static ChatMemory memory = TokenWindowChatMemory.builder()
             .maxTokens(4000, new OpenAiTokenCountEstimator("gpt-3.5-turbo"))
             .build();    static String Ai_Decision(Ai[] AllAi,ChatMessage system)
     {
-        Scanner sc=new Scanner(System.in);
         System.out.print("Enter the prompt:");
         ChatMessage user = userMessage(sc.nextLine());
         String UMessage = "Question asked by user: " + ((dev.langchain4j.data.message.UserMessage) user).singleText();
@@ -112,32 +115,71 @@ public class Orcas_Ai
         safeHistory.add(system);
         for (int i=0;i<AllAi.length-1;i++)
         {
-
-            UMessage+="Answer "+(i+1)+": "+(AllAi[i].Respond(safeHistory).aiMessage().text());
+            try {
+                UMessage += "Answer " + (i + 1) + ": " + (AllAi[i].Respond(safeHistory).aiMessage().text());
+            }
+            catch(Exception e)
+            {
+                System.out.println("The server at "+AllAi[i].name+"is Overloaded, so this output is being skipped sorry for the inconvenience");
+            }
         }
         List<ChatMessage> judgeContext = new ArrayList<>();
-        system = systemMessage("You are a response evaluator. You will receive a user question followed by 5 AI-generated answers.\n" +
-                "\n" +
-                "Your job is to return ONLY the single best answer as-is, word for word.\n" +
-                "\n" +
-                "Use these criteria to judge:\n" +
-                "- Accuracy: Is the answer factually correct?\n" +
-                "- Completeness: Does it fully address what the user asked?\n" +
-                "- Clarity: Is it easy to understand?\n" +
-                "- Conciseness: Does it avoid unnecessary filler or repetition?\n" +
-                "\n" +
-                "Rules you must follow:\n" +
-                "- Do NOT add any introduction like \"Here is the best answer\"\n" +
-                "- Do NOT add any explanation of why you chose it\n" +
-                "- Do NOT modify, summarize or improve the chosen answer\n" +
-                "- Do NOT combine multiple answers together\n" +
-                "- Return ONLY the chosen answer and nothing else ");
+        system = systemMessage(
+                "You are an expert response evaluator and synthesizer. You will receive a user prompt followed by 5 AI-generated responses.\n" +
+                        "\n" +
+                        "## Step 1: Classify the Task\n" +
+                        "First, determine the nature of the task:\n" +
+                        "\n" +
+                        "- ATOMIC: The response is a single cohesive unit that cannot be split or recombined without losing its meaning or effect.\n" +
+                        "  Examples: jokes, poems, riddles, creative one-liners, haikus, puns, stories.\n" +
+                        "\n" +
+                        "- COMPOSITIONAL: The response is made of separable parts where different sources may each contribute stronger sections.\n" +
+                        "  Examples: explanations, factual answers, essays, code, step-by-step guides, comparisons, summaries.\n" +
+                        "\n" +
+                        "## Step 2: Apply the Right Strategy\n" +
+                        "\n" +
+                        "### If ATOMIC → SELECT\n" +
+                        "- Evaluate all 5 responses using these criteria:\n" +
+                        "  - Impact: Is it funny, moving, or effective at what it is trying to do?\n" +
+                        "  - Originality: Is it creative and non-generic?\n" +
+                        "  - Correctness: Does it fully land (e.g. does the joke make sense, does the poem flow)?\n" +
+                        "- Return ONLY the single best response, word for word, with zero modifications.\n" +
+                        "\n" +
+                        "### If COMPOSITIONAL → SYNTHESIZE\n" +
+                        "- Evaluate all 5 responses using these criteria:\n" +
+                        "  - Accuracy: Is the information factually correct?\n" +
+                        "  - Completeness: Does it fully address what the user asked?\n" +
+                        "  - Clarity: Is it easy to understand?\n" +
+                        "  - Conciseness: Does it avoid unnecessary filler or repetition?\n" +
+                        "- Extract the strongest elements from each response.\n" +
+                        "- Write a single unified response that combines the best structure, depth, accuracy, and clarity from all 5.\n" +
+                        "- The result should be better than any individual response alone.\n" +
+                        "\n" +
+                        "## Rules you must follow in ALL cases:\n" +
+                        "- Do NOT start with any introduction like 'Here is the best answer' or 'Based on my evaluation'\n" +
+                        "- Do NOT explain your classification or your reasoning\n" +
+                        "- Do NOT mention which responses you used or preferred\n" +
+                        "- Return ONLY the final answer and absolutely nothing else\n"+
+                        "- If it exceeds 1900 characters rewrite it so it doesnt exceed 1900 characters");
+
         judgeContext.add(system);
         judgeContext.add(userMessage(UMessage));
-        String finalOutput=AllAi[AllAi.length-1].Respond(judgeContext).aiMessage().text();
+        String finalOutput="All Ai's are busy so no output";
+        for(int i=AllAi.length-1;i>=0;i--) {
+            try {
+                finalOutput = AllAi[i].Respond(judgeContext).aiMessage().text();
+                break;
+            } catch (Exception e) {
+                if(i!=0)
+                    System.out.println("Gemini is busy right now so judge Ai is being replaced by"+AllAi[i-1].name);
+                else {
+                    System.out.println("All 6 Ai's are busy, so this program will now close");
+                    System.exit(0);
+                }
+            }
+        }
         memory.add(aiMessage(finalOutput));
         System.out.println(finalOutput);
-        sc.close();
         return finalOutput;
     }
     public static void main(String[] args) {
@@ -147,7 +189,6 @@ public class Orcas_Ai
         dedicatedAiChat mistral=new dedicatedAiChat("mistral","open-mistral-nemo");
         dedicatedAiChat cloudflare=new dedicatedAiChat("cloudflare","@cf/meta/llama-3.1-8b-instruct");
         OpenAiChat huggingface=new OpenAiChat("huggingface","https://router.huggingface.co/v1","Qwen/Qwen2.5-7B-Instruct");
-        Scanner sc=new Scanner(System.in);
         System.out.print("Enter the behaviour you want the Ai to have:");
         ChatMessage system = systemMessage(sc.nextLine());
         Ai[] AllAi={groq,cohere,mistral,cloudflare,huggingface,gemini};
@@ -171,14 +212,14 @@ public class Orcas_Ai
             }
             if(a.equalsIgnoreCase("yes"))
                 break;
-            System.out.println("Please enter the changes you want in the below prompt");
+            System.out.println("In the below prompt, write the changes you want in the output");
         }
-        if (finalOutput.length() > 1800) {
+        if (finalOutput.length() > 1900) {
             finalOutput = finalOutput.substring(0, 1800);
         }
         System.out.println("Dispatching output to Discord...");
-        sc.close();
         Main.sendMessage(finalOutput);
+        sc.close();
     }
 }
 class Main {
