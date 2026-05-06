@@ -30,8 +30,8 @@ import java.util.List;
 import java.util.ArrayList;
 import static dev.langchain4j.data.message.AiMessage.aiMessage;
 class Ai {
-    ChatModel Ai;
-    String name;
+    protected ChatModel Ai;
+    protected String name;
     ChatResponse Respond(ChatMessage system, ChatMessage user)
     {
         return Ai.chat(ChatRequest.builder()
@@ -76,13 +76,6 @@ class dedicatedAiChat extends Ai
                         .modelName(modelName)
                         .build();
                 break;
-            case "cloudflare":
-                this.Ai= WorkersAiChatModel.builder()
-                        .accountId(System.getenv("CLOUDFLARE_ACCOUNT_ID"))
-                        .apiToken(System.getenv("CLOUDFLARE_API_TOKEN"))
-                        .modelName(modelName)
-                        .build();
-                break;
             default:
                 System.out.println("Sorry we are working on adding support to that Ai Model");
         }
@@ -102,21 +95,10 @@ public class Orcas_Ai
         String UMessage = "Question asked by user: " + ((dev.langchain4j.data.message.UserMessage) user).singleText();
         memory.add(user);
         List<ChatMessage> history = memory.messages();
-        List<ChatMessage> safeHistory = new ArrayList<>();
-        for (ChatMessage msg : history) {
-            if (msg instanceof dev.langchain4j.data.message.AiMessage) {
-                String previousAiText = ((dev.langchain4j.data.message.AiMessage) msg).text();
-                safeHistory.add(userMessage("Assistant previously said: " + previousAiText));
-            }
-            else {
-                safeHistory.add(msg);
-            }
-        }
-        safeHistory.add(system);
         for (int i=0;i<AllAi.length-1;i++)
         {
             try {
-                UMessage += "Answer " + (i + 1) + ": " + (AllAi[i].Respond(safeHistory).aiMessage().text());
+                UMessage += "Answer " + (i + 1) + ": " + (AllAi[i].Respond(history).aiMessage().text());
             }
             catch(Exception e)
             {
@@ -171,7 +153,7 @@ public class Orcas_Ai
                 break;
             } catch (Exception e) {
                 if(i!=0)
-                    System.out.println("Gemini is busy right now so judge Ai is being replaced by"+AllAi[i-1].name);
+                    System.out.println(AllAi[i].name+" busy right now so judge Ai is being replaced by"+AllAi[i-1].name);
                 else {
                     System.out.println("All 6 Ai's are busy, so this program will now close");
                     System.exit(0);
@@ -183,15 +165,16 @@ public class Orcas_Ai
         return finalOutput;
     }
     public static void main(String[] args) {
+        System.setProperty("org.slf4j.simpleLogger.log.dev.langchain4j", "error");
         dedicatedAiChat gemini=new dedicatedAiChat("gemini","gemini-2.5-flash");
         OpenAiChat groq=new OpenAiChat("groq","https://api.groq.com/openai/v1","llama-3.1-8b-instant");
         OpenAiChat cohere=new OpenAiChat("cohere","https://api.cohere.com/compatibility/v1","command-r7b-12-2024");
         dedicatedAiChat mistral=new dedicatedAiChat("mistral","open-mistral-nemo");
-        dedicatedAiChat cloudflare=new dedicatedAiChat("cloudflare","@cf/meta/llama-3.1-8b-instruct");
+        OpenAiChat openrouter = new OpenAiChat("openrouter", "https://openrouter.ai/api/v1", "meta-llama/llama-3.1-8b-instruct:free");
         OpenAiChat huggingface=new OpenAiChat("huggingface","https://router.huggingface.co/v1","Qwen/Qwen2.5-7B-Instruct");
         System.out.print("Enter the behaviour you want the Ai to have:");
         ChatMessage system = systemMessage(sc.nextLine());
-        Ai[] AllAi={groq,cohere,mistral,cloudflare,huggingface,gemini};
+        Ai[] AllAi={groq,cohere,mistral,openrouter,huggingface,gemini};
         String finalOutput;
         while (true)
         {
@@ -215,7 +198,22 @@ public class Orcas_Ai
             System.out.println("In the below prompt, write the changes you want in the output");
         }
         if (finalOutput.length() > 1900) {
-            finalOutput = finalOutput.substring(0, 1800);
+            List<ChatMessage> trimContext = new ArrayList<>();
+            trimContext.add(systemMessage("Rewrite the following response so it is under 1900 characters. Preserve the core meaning. Return only the rewritten text, nothing else."));
+            trimContext.add(userMessage(finalOutput));
+
+            for (int i = AllAi.length - 1; i >= 0; i--) {
+                try {
+                    finalOutput = AllAi[i].Respond(trimContext).aiMessage().text();
+                    break;
+                } catch (Exception e) {
+                    //Skip this
+                }
+            }
+        }
+
+        if (finalOutput.length() > 1900) {
+            finalOutput = finalOutput.substring(0, 1900);
         }
         System.out.println("Dispatching output to Discord...");
         Main.sendMessage(finalOutput);
