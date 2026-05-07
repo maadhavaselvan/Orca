@@ -168,11 +168,11 @@ public class Orcas_Ai
                 finalOutput = AllAi[i].Respond(judgeContext).aiMessage().text();
                 break;
             } catch (Exception e) {
-                if(i!=0)
-                    System.out.println(AllAi[i].name+" busy right now so judge Ai is being replaced by"+AllAi[i-1].name);
-                else {
-                    System.out.println("All 6 Ai's are busy, so this program will now close");
-                    System.exit(0);
+                if (i != 0) {
+                    System.out.println(AllAi[i].name + " is busy right now, so judge AI is being replaced by " + AllAi[i-1].name);
+                } else {
+                    System.out.println("\n[ERROR] All 6 AIs failed to judge (the text was likely too large for their token limits!).");
+                    return "Error: The prompt and answers were too long to be evaluated. Please try a shorter prompt."; 
                 }
             }
         }
@@ -190,11 +190,16 @@ public class Orcas_Ai
         OpenAiChat huggingface=new OpenAiChat("huggingface","https://router.huggingface.co/v1","Qwen/Qwen2.5-7B-Instruct");
         System.out.print("Enter the behaviour you want the Ai to have:");
         ChatMessage system = systemMessage(sc.nextLine());
-        Ai[] AllAi={groq,cohere,mistral,openrouter,huggingface,gemini};
+        Ai[] AllAi = {huggingface, cohere, mistral, openrouter, groq, gemini};;
         String finalOutput;
         while (true)
         {
             finalOutput=Orcas_Ai.Ai_Decision(AllAi,system);
+
+            if (finalOutput.startsWith("Error: The prompt and answers were too long")) {
+                continue; // This skips the yes/no question and loops right back to "Enter the prompt:"!
+            }
+
             String a;
             while (true) {
                 System.out.print("Is the above output satisfactory(enter yes/no):");
@@ -235,18 +240,33 @@ public class Orcas_Ai
        
         
         // 1. Build the Agent
-        DispatchAgent agent = AiServices.builder(DispatchAgent.class)
-                .chatModel(gemini.Ai) 
-                .tools(new AppTools()) 
-                .build();
-
-        // 2. Feed it the context
+        System.out.println("\n🤖 Handing over to Dispatch Agent...");
+        String deliveryResult = "Failed: All APIs are out of tokens.";
         String context = "User Original Request: \"" + lastUserPrompt + "\"\n\nFinal Approved Content: \"" + finalOutput + "\"";
-        
-        // 3. Let it decide what to do!
-        String deliveryResult = agent.dispatch(context);
-        System.out.println("Agent Report: " + deliveryResult);
 
+        // Loop through your AIs just like you did for the Judge!
+        for (int i = AllAi.length - 1; i >= 0; i--) {
+            try {
+                // 1. Build the Agent using the current AI in the loop
+                DispatchAgent agent = AiServices.builder(DispatchAgent.class)
+                        .chatModel(AllAi[i].Ai) 
+                        .tools(new AppTools()) 
+                        .build();
+
+                // 2. Let it decide what to do
+                deliveryResult = agent.dispatch(context);
+                
+                // If it succeeds, print a success message and break the loop!
+                System.out.println("-> Successfully used [" + AllAi[i].name + "] for dispatch.");
+                break; 
+
+            } catch (Exception e) {
+                // If it fails (like a 429 Rate Limit), catch it and let the loop try the next AI
+                System.out.println("-> [" + AllAi[i].name + "] is out of tokens or busy. Switching to next AI...");
+            }
+        }
+        
+        System.out.println("Agent Report: " + deliveryResult);
         sc.close();
     }
 }
@@ -256,7 +276,9 @@ interface DispatchAgent {
     @SystemMessage({
         "You are an intelligent dispatch agent running at the very end of a pipeline.",
         "You will be given the 'User Original Request' and the 'Final Approved Content'.",
-        "If the user requested to send an email, extract the exact email address and use the sendEmail tool.",
+        "If the user requested to send an email, carefully extract the exact, real email addresses from the context.",
+        "NEVER use placeholders like '[Your Email Address]'. You must use the actual email addresses provided.",
+        "Use the sendEmail tool to send the email.",
         "If the user requested to post to Discord, use the sendDiscord tool.",
         "If the user did NOT explicitly ask to email or post it, do NOT use any tools. Just reply: 'No delivery actions requested.'"
     })
@@ -283,7 +305,7 @@ class AppTools {
                     return new PasswordAuthentication(fromEmail, appPassword);
                 }
             });
-
+            toEmail = toEmail.replace(" ", ",");
             Message message = new MimeMessage(session);
             message.setFrom(new InternetAddress(fromEmail));
             message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(toEmail));
