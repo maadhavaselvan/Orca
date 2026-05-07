@@ -1,3 +1,6 @@
+<img width="700" height="350" alt="image" src="https://github.com/user-attachments/assets/bbf14033-91f3-435e-9552-68fd0b7125e0" />
+
+
 🐋 Orca AI Arena
 Orca is a multi-model AI pipeline that generates, synthesizes, and dispatches content across various platforms. It uses an Arena Strategy where five different AI models compete to generate the best answer, followed by a "Judge AI" that combines the results into a single, high-quality response.
 
