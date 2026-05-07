@@ -29,6 +29,16 @@ import dev.langchain4j.model.openai.OpenAiTokenCountEstimator;
 import java.util.List;
 import java.util.ArrayList;
 import static dev.langchain4j.data.message.AiMessage.aiMessage;
+
+// --- NEW IMPORTS FOR THE AGENT ---
+import dev.langchain4j.service.AiServices;
+import dev.langchain4j.agent.tool.Tool;
+import dev.langchain4j.service.SystemMessage;
+import jakarta.mail.*;
+import jakarta.mail.internet.*;
+import java.util.Properties;
+// ---------------------------------
+
 class Ai {
     protected ChatModel Ai;
     protected String name;
@@ -86,13 +96,19 @@ class dedicatedAiChat extends Ai
 public class Orcas_Ai
 {
     static Scanner sc=new Scanner(System.in);
+    
     static ChatMemory memory = TokenWindowChatMemory.builder()
             .maxTokens(4000, new OpenAiTokenCountEstimator("gpt-3.5-turbo"))
-            .build();    static String Ai_Decision(Ai[] AllAi,ChatMessage system)
+            .build();    
+
+    static String lastUserPrompt = "";
+
+    static String Ai_Decision(Ai[] AllAi,ChatMessage system)
     {
         System.out.print("Enter the prompt:");
-        ChatMessage user = userMessage(sc.nextLine());
-        String UMessage = "Question asked by user: " + ((dev.langchain4j.data.message.UserMessage) user).singleText();
+        lastUserPrompt = sc.nextLine();
+        ChatMessage user = userMessage(lastUserPrompt);
+        String UMessage = "Question asked by user: " + lastUserPrompt;
         memory.add(user);
         List<ChatMessage> history = memory.messages();
         for (int i=0;i<AllAi.length-1;i++)
@@ -215,52 +231,91 @@ public class Orcas_Ai
         if (finalOutput.length() > 1900) {
             finalOutput = finalOutput.substring(0, 1900);
         }
-        System.out.println("Dispatching output to Discord...");
-        Main.sendMessage(finalOutput);
+        
+       
+        
+        // 1. Build the Agent
+        DispatchAgent agent = AiServices.builder(DispatchAgent.class)
+                .chatModel(gemini.Ai) 
+                .tools(new AppTools()) 
+                .build();
+
+        // 2. Feed it the context
+        String context = "User Original Request: \"" + lastUserPrompt + "\"\n\nFinal Approved Content: \"" + finalOutput + "\"";
+        
+        // 3. Let it decide what to do!
+        String deliveryResult = agent.dispatch(context);
+        System.out.println("Agent Report: " + deliveryResult);
+
         sc.close();
     }
 }
-class Main {
 
-    // STEP 1: Paste your unique Discord Webhook URL here
-    private static final String DISCORD_WEBHOOK_URL = System.getenv("discord");
 
-    /**
-     * Sends the selected message to the specified Discord channel.
-     * @param selectedMessage The text chosen by your Judge AI.
-     */
-    public static void sendMessage(String selectedMessage) {
+interface DispatchAgent {
+    @SystemMessage({
+        "You are an intelligent dispatch agent running at the very end of a pipeline.",
+        "You will be given the 'User Original Request' and the 'Final Approved Content'.",
+        "If the user requested to send an email, extract the exact email address and use the sendEmail tool.",
+        "If the user requested to post to Discord, use the sendDiscord tool.",
+        "If the user did NOT explicitly ask to email or post it, do NOT use any tools. Just reply: 'No delivery actions requested.'"
+    })
+    String dispatch(String context);
+}
+
+class AppTools {
+    @Tool("Sends an email to a specific email address with a subject and body.")
+    public String sendEmail(String toEmail, String subject, String body) {
+        System.out.println("\n--> [AGENT] Sending Email to " + toEmail + "...");
         try {
-            // STEP 2: Format the data into JSON.
-            // Discord requires a JSON body like: {"content": "your text"}
-            // We use replace() to handle basic double quotes within the message.
+            final String fromEmail = System.getenv("gmail");
+            final String appPassword = System.getenv("password");
+
+            Properties props = new Properties();
+            props.put("mail.smtp.host", "smtp.gmail.com");
+            props.put("mail.smtp.port", "587");
+            props.put("mail.smtp.auth", "true");
+            props.put("mail.smtp.starttls.enable", "true");
+            props.put("mail.smtp.ssl.protocols", "TLSv1.2"); // <-- Google TLS Fix applied!
+
+            Session session = Session.getInstance(props, new Authenticator() {
+                protected PasswordAuthentication getPasswordAuthentication() {
+                    return new PasswordAuthentication(fromEmail, appPassword);
+                }
+            });
+
+            Message message = new MimeMessage(session);
+            message.setFrom(new InternetAddress(fromEmail));
+            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(toEmail));
+            message.setSubject(subject);
+            message.setText(body);
+
+            Transport.send(message);
+            return "Success: Email sent to " + toEmail;
+        } catch (Exception e) {
+            return "Failed to send email: " + e.getMessage();
+        }
+    }
+
+    @Tool("Sends a text message to the Discord webhook.")
+    public String sendDiscord(String messageText) {
+        System.out.println("\n--> [AGENT] Sending message to Discord...");
+        try {
+            String DISCORD_WEBHOOK_URL = System.getenv("discord");
             ObjectMapper mapper = new ObjectMapper();
-            String jsonBody = mapper.writeValueAsString(Map.of("content", selectedMessage));
+            String jsonBody = mapper.writeValueAsString(Map.of("content", messageText));
 
-
-            // STEP 3: Build the HTTP Request
-            HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(10))
-                    .build();
-
+            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(DISCORD_WEBHOOK_URL))
-                    .header("Content-Type", "application/json") // CRITICAL: Tells Discord it's JSON
+                    .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                     .build();
 
-            // STEP 4: Send the request and check the response
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-            if (response.statusCode() == 204) {
-                System.out.println("[SUCCESS] Message sent to Discord!");
-            } else {
-                System.out.println("[ERROR] Failed to send. HTTP Status: " + response.statusCode());
-                System.out.println("Response body: " + response.body());
-            }
-
+            return response.statusCode() == 204 ? "Successfully posted to Discord." : "Failed to post to Discord. Status: " + response.statusCode();
         } catch (Exception e) {
-            System.err.println("[EXCEPTION] Error dispatching webhook: " + e.getMessage());
+            return "Failed to send Discord message. Error: " + e.getMessage();
         }
     }
 }
