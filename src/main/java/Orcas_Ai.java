@@ -14,7 +14,6 @@ import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
 import dev.langchain4j.model.mistralai.MistralAiChatModel;
 // OpenAI-compatible (used for Groq)
 import dev.langchain4j.model.openai.OpenAiChatModel;
-import dev.langchain4j.model.workersai.WorkersAiChatModel;
 
 import java.net.URI;
 import java.net.http.HttpClient;// Don't forget to add multithreading
@@ -29,39 +28,58 @@ import dev.langchain4j.model.openai.OpenAiTokenCountEstimator;
 import java.util.List;
 import java.util.ArrayList;
 import static dev.langchain4j.data.message.AiMessage.aiMessage;
-class Ai {
+abstract class Ai {
     protected ChatModel Ai;
-    protected String name;
-    ChatResponse Respond(ChatMessage system, ChatMessage user)
-    {
-        return Ai.chat(ChatRequest.builder()
-                .messages(system, user)
-                .build());
-    }
+    private final String name;
+    protected abstract  void buildModel();
     ChatResponse Respond(List<ChatMessage> user)
     {
         return Ai.chat(ChatRequest.builder()
                 .messages(user)
                 .build());
     }
+    Ai(String name)
+    {
+        this.name=name;
+    }
+    public String getName()
+    {
+        return name;
+    }
 }
 class OpenAiChat extends Ai
 {
+    String baseUrl;
+    String modelName;
     OpenAiChat(String name,String baseUrl,String modelName)
     {
-        this.name=name;
+        super(name);
+        this.baseUrl=baseUrl;
+        this.modelName=modelName;
+        buildModel();
+    }
+    protected void buildModel()
+    {
         this.Ai=OpenAiChatModel.builder()
                 .baseUrl(baseUrl)
-                .apiKey(System.getenv(name.toUpperCase()+"_API_KEY"))
+                .apiKey(System.getenv(getName().toUpperCase()+"_API_KEY"))
                 .modelName(modelName)
                 .build();
     }
 }
 class dedicatedAiChat extends Ai
 {
+    String name;
+    String modelName;
     dedicatedAiChat(String name,String modelName)
     {
+        super(name);
         this.name=name;
+        this.modelName=modelName;
+        buildModel();
+    }
+    protected void buildModel()
+    {
         switch (name.toLowerCase()) {
             case "gemini":
             case "google":
@@ -81,20 +99,22 @@ class dedicatedAiChat extends Ai
         }
     }
 
+
 }
 
 public class Orcas_Ai
 {
-    static Scanner sc=new Scanner(System.in);
-    static ChatMemory memory = TokenWindowChatMemory.builder()
+    private static final Scanner sc=new Scanner(System.in);
+    private static final ChatMemory memory = TokenWindowChatMemory.builder()
             .maxTokens(4000, new OpenAiTokenCountEstimator("gpt-3.5-turbo"))
             .build();
-    static String Ai_Decision(Ai[] AllAi,ChatMessage system)
+    private static String Ai_Decision(Ai[] AllAi,ChatMessage system)
     {
         memory.add(system);
         System.out.print("Enter the prompt:");
-        ChatMessage user = userMessage(sc.nextLine());
-        String UMessage = "Question asked by user: " + ((dev.langchain4j.data.message.UserMessage) user).singleText();
+        String Current_Message=sc.nextLine();
+        ChatMessage user = userMessage(Current_Message);
+        String UMessage = "Question asked by user: " + Current_Message;
         memory.add(user);
         List<ChatMessage> history = memory.messages();
         for (int i=0;i<AllAi.length-1;i++)
@@ -104,7 +124,7 @@ public class Orcas_Ai
             }
             catch(Exception e)
             {
-                System.out.println("The server at "+AllAi[i].name+"is Overloaded, so this output is being skipped sorry for the inconvenience");
+                System.out.println("The server at "+AllAi[i].getName()+" is Overloaded, so this output is being skipped sorry for the inconvenience");
             }
         }
         List<ChatMessage> judgeContext = new ArrayList<>();
@@ -155,7 +175,7 @@ public class Orcas_Ai
                 break;
             } catch (Exception e) {
                 if(i!=0)
-                    System.out.println(AllAi[i].name+" busy right now so judge Ai is being replaced by"+AllAi[i-1].name);
+                    System.out.println(AllAi[i].getName()+" busy right now so judge Ai is being replaced by"+AllAi[i-1].getName());
                 else {
                     System.out.println("All 6 Ai's are busy, so this program will now close");
                     System.exit(0);
