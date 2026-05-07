@@ -88,8 +88,10 @@ public class Orcas_Ai
     static Scanner sc=new Scanner(System.in);
     static ChatMemory memory = TokenWindowChatMemory.builder()
             .maxTokens(4000, new OpenAiTokenCountEstimator("gpt-3.5-turbo"))
-            .build();    static String Ai_Decision(Ai[] AllAi,ChatMessage system)
+            .build();
+    static String Ai_Decision(Ai[] AllAi,ChatMessage system)
     {
+        memory.add(system);
         System.out.print("Enter the prompt:");
         ChatMessage user = userMessage(sc.nextLine());
         String UMessage = "Question asked by user: " + ((dev.langchain4j.data.message.UserMessage) user).singleText();
@@ -215,6 +217,7 @@ public class Orcas_Ai
         if (finalOutput.length() > 1900) {
             finalOutput = finalOutput.substring(0, 1900);
         }
+
         System.out.println("Dispatching output to Discord...");
         Main.sendMessage(finalOutput);
         sc.close();
