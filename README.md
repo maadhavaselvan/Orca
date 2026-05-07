@@ -1,4 +1,5 @@
-<img width="700" height="350" alt="image" src="https://github.com/user-attachments/assets/bbf14033-91f3-435e-9552-68fd0b7125e0" />
+<img width="629" height="360" alt="image" src="https://github.com/user-attachments/assets/d50a7d06-13b0-406e-9847-d155479971e4" />
+
 
 
 🐋 Orca AI Arena
