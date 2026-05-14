@@ -21,6 +21,9 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.Map;
+
+
+
 import java.util.Scanner;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.TokenWindowChatMemory;
@@ -248,30 +251,23 @@ public class Orcas_Ai
         }
 
 
-
-        // 1. Build the Agent
         System.out.println("\n🤖 Handing over to Dispatch Agent...");
         String deliveryResult = "Failed: All APIs are out of tokens.";
         String context = "User Original Request: \"" + lastUserPrompt + "\"\n\nFinal Approved Content: \"" + finalOutput + "\"";
 
-        // Loop through your AIs just like you did for the Judge!
         for (int i = AllAi.length - 1; i >= 0; i--) {
             try {
-                // 1. Build the Agent using the current AI in the loop
                 DispatchAgent agent = AiServices.builder(DispatchAgent.class)
                         .chatModel(AllAi[i].Ai)
                         .tools(new AppTools())
                         .build();
 
-                // 2. Let it decide what to do
                 deliveryResult = agent.dispatch(context);
 
-                // If it succeeds, print a success message and break the loop!
                 System.out.println("-> Successfully used [" + AllAi[i].getName() + "] for dispatch.");
                 break;
 
             } catch (Exception e) {
-                // If it fails (like a 429 Rate Limit), catch it and let the loop try the next AI
                 System.out.println("-> [" + AllAi[i].getName() + "] is out of tokens or busy. Switching to next AI...");
             }
         }
@@ -290,7 +286,9 @@ interface DispatchAgent {
         "NEVER use placeholders like '[Your Email Address]'. You must use the actual email addresses provided.",
         "Use the sendEmail tool to send the email.",
         "If the user requested to post to Discord, use the sendDiscord tool.",
-        "If the user did NOT explicitly ask to email or post it, do NOT use any tools. Just reply: 'No delivery actions requested.'"
+        "Call each tool at most ONCE. Do not repeat tool calls. unless you are sending to multiple different people",
+        "If the user did NOT explicitly ask to email or post it, do NOT use any tools. Just reply: 'No delivery actions requested.'",
+        "If you DID send an email or Discord message, reply ONLY with a summary like: 'Sent email to X, Y, Z.' Do NOT say 'No delivery actions requested.'"
     })
     String dispatch(String context);
 }
@@ -308,7 +306,7 @@ class AppTools {
             props.put("mail.smtp.port", "587");
             props.put("mail.smtp.auth", "true");
             props.put("mail.smtp.starttls.enable", "true");
-            props.put("mail.smtp.ssl.protocols", "TLSv1.2"); // <-- Google TLS Fix applied!
+            props.put("mail.smtp.ssl.protocols", "TLSv1.2");
 
             Session session = Session.getInstance(props, new Authenticator() {
                 protected PasswordAuthentication getPasswordAuthentication() {
