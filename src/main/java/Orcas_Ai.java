@@ -119,14 +119,18 @@ public class Orcas_Ai
     private static final ChatMemory memory = TokenWindowChatMemory.builder()
             .maxTokens(4000, new OpenAiTokenCountEstimator("gpt-3.5-turbo"))
             .build();
-    static String lastUserPrompt = "";
+    static String UserPrompt = "";
+    static String allUserPrompt="";
+    static int count=0;
     private static String Ai_Decision(Ai[] AllAi,ChatMessage system)
     {
+        count++;
         memory.add(system);
         System.out.print("Enter the prompt:");
-        lastUserPrompt = sc.nextLine();
-        ChatMessage user = userMessage(lastUserPrompt);
-        String UMessage = "Question asked by user: " + lastUserPrompt;
+        UserPrompt = sc.nextLine();
+        ChatMessage user = userMessage(UserPrompt);
+        String UMessage = "Question asked by user: " + UserPrompt;
+        allUserPrompt+=""+count+"."+UserPrompt+"\n";
         memory.add(user);
         List<ChatMessage> history = memory.messages();
         for (int i=0;i<AllAi.length-1;i++)
@@ -253,7 +257,7 @@ public class Orcas_Ai
 
         System.out.println("\n🤖 Handing over to Dispatch Agent...");
         String deliveryResult = "Failed: All APIs are out of tokens.";
-        String context = "User Original Request: \"" + lastUserPrompt + "\"\n\nFinal Approved Content: \"" + finalOutput + "\"";
+        String context = "These are the Request given by user: \"" + allUserPrompt + "\"\n\nFinal Approved Content: \"" + finalOutput + "\"";
 
         for (int i = AllAi.length - 1; i >= 0; i--) {
             try {
@@ -280,15 +284,18 @@ public class Orcas_Ai
 
 interface DispatchAgent {
     @SystemMessage({
-        "You are an intelligent dispatch agent running at the very end of a pipeline.",
-        "You will be given the 'User Original Request' and the 'Final Approved Content'.",
-        "If the user requested to send an email, carefully extract the exact, real email addresses from the context.",
-        "NEVER use placeholders like '[Your Email Address]'. You must use the actual email addresses provided.",
-        "Use the sendEmail tool to send the email.",
-        "If the user requested to post to Discord, use the sendDiscord tool.",
-        "Call each tool at most ONCE. Do not repeat tool calls. unless you are sending to multiple different people",
-        "If the user did NOT explicitly ask to email or post it, do NOT use any tools. Just reply: 'No delivery actions requested.'",
-        "If you DID send an email or Discord message, reply ONLY with a summary like: 'Sent email to X, Y, Z.' Do NOT say 'No delivery actions requested.'"
+            "You are an intelligent dispatch agent running at the very end of a pipeline.",
+            "You will be given a numbered list of user prompts and the final approved content.",
+            "The prompts are in order — LATER prompts about delivery override EARLIER ones.",
+            "If a prompt contains words like 'i meant', 'instead', 'only', 'not' → it REPLACES the previous delivery target.",
+            "If a prompt contains words like 'also', 'too', 'and', 'as well' → it ADDS to the previous delivery target.",
+            "If the user requested to send an email, carefully extract the exact, real email addresses from the context.",
+            "NEVER use placeholders like '[Your Email Address]'. You must use the actual email addresses provided.",
+            "Use the sendEmail tool to send the email.",
+            "If the user requested to post to Discord, use the sendDiscord tool.",
+            "Call each tool at most ONCE. Do not repeat tool calls unless you are sending to multiple different people.",
+            "If the user did NOT explicitly ask to email or post it, do NOT use any tools. Just reply: 'No delivery actions requested.'",
+            "If you DID send an email or Discord message, reply ONLY with a summary like: 'Sent email to X, Y, Z.' Do NOT say 'No delivery actions requested.'"
     })
     String dispatch(String context);
 }
@@ -331,7 +338,7 @@ class AppTools {
     public String sendDiscord(String messageText) {
         System.out.println("\n--> [AGENT] Sending message to Discord...");
         try {
-            String DISCORD_WEBHOOK_URL = System.getenv("discord");
+            String DISCORD_WEBHOOK_URL = System.getenv("discord2");
             ObjectMapper mapper = new ObjectMapper();
             String jsonBody = mapper.writeValueAsString(Map.of("content", messageText));
 
