@@ -125,14 +125,15 @@ public class Orcas_Ai
     private static String Ai_Decision(Ai[] AllAi,ChatMessage system)
     {
         count++;
-        memory.add(system);
         System.out.print("Enter the prompt:");
         UserPrompt = sc.nextLine();
         ChatMessage user = userMessage(UserPrompt);
         String UMessage = "Question asked by user: " + UserPrompt;
         allUserPrompt+=""+count+"."+UserPrompt+"\n";
         memory.add(user);
-        List<ChatMessage> history = memory.messages();
+        List<ChatMessage> history = new ArrayList<>();
+        history.add(system);
+        history.addAll(memory.messages());
         for (int i=0;i<AllAi.length-1;i++)
         {
             try {
