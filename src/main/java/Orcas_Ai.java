@@ -40,6 +40,9 @@ import jakarta.mail.*;
 import jakarta.mail.internet.*;
 import java.util.Properties;
 // ---------------------------------
+import java.awt.Desktop;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 
 abstract class Ai {
     protected ChatModel Ai;
@@ -290,13 +293,20 @@ interface DispatchAgent {
             "The prompts are in order — LATER prompts about delivery override EARLIER ones.",
             "If a prompt contains words like 'i meant', 'instead', 'only', 'not' → it REPLACES the previous delivery target.",
             "If a prompt contains words like 'also', 'too', 'and', 'as well' → it ADDS to the previous delivery target.",
+
             "If the user requested to send an email, carefully extract the exact, real email addresses from the context.",
             "NEVER use placeholders like '[Your Email Address]'. You must use the actual email addresses provided.",
             "Use the sendEmail tool to send the email.",
+
             "If the user requested to post to Discord, use the sendDiscord tool.",
-            "Call each tool at most ONCE. Do not repeat tool calls unless you are sending to multiple different people.",
-            "If the user did NOT explicitly ask to email or post it, do NOT use any tools. Just reply: 'No delivery actions requested.'",
-            "If you DID send an email or Discord message, reply ONLY with a summary like: 'Sent email to X, Y, Z.' Do NOT say 'No delivery actions requested.'"
+
+            "If the user asked for a video, tutorial, or wants to watch something, use the openYouTubeVideo tool.",
+            "For video requests, craft a precise YouTube search query based on the topic — include helpful terms like the programming language, concept name, and 'tutorial' or 'explained'.",
+            "Example: if the user says 'I want the best Java video for overriding', call openYouTubeVideo with 'Java method overriding tutorial best explained'.",
+
+            "Call each tool at most ONCE. Do not repeat tool calls unless sending to multiple different people.",
+            "If the user did NOT explicitly ask to email, post, or find a video, do NOT use any tools. Just reply: 'No delivery actions requested.'",
+            "If you DID perform an action, reply ONLY with a short summary like: 'Opened YouTube for Java overriding tutorial.' Do NOT say 'No delivery actions requested.'"
     })
     String dispatch(String context);
 }
@@ -356,4 +366,25 @@ class AppTools {
             return "Failed to send Discord message. Error: " + e.getMessage();
         }
     }
+    @Tool("Searches YouTube for the best video matching the user's topic and opens it in the browser.")
+    public String openYouTubeVideo(String searchQuery) {
+        System.out.println("\n--> [AGENT] Searching YouTube for: " + searchQuery + "...");
+        try {
+            String encoded = URLEncoder.encode(searchQuery, StandardCharsets.UTF_8);
+            String url = "https://www.youtube.com/results?search_query=" + encoded;
+            URI uri = new URI(url);
+
+            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                Desktop.getDesktop().browse(uri);
+                return "Success: Opened YouTube search for \"" + searchQuery + "\"";
+            } else {
+                // Fallback for Linux servers without a display
+                Runtime.getRuntime().exec(new String[]{"xdg-open", url});
+                return "Success: Launched browser for \"" + searchQuery + "\" via xdg-open";
+            }
+        } catch (Exception e) {
+            return "Failed to open video: " + e.getMessage();
+        }
+    }
+
 }
