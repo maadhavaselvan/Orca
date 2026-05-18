@@ -310,6 +310,11 @@ interface DispatchAgent {
 
             "Call each tool at most ONCE. Do not repeat tool calls unless sending to multiple different people.",
             "If the user did NOT explicitly ask to email, post, or find a video, do NOT use any tools. Just reply: 'No delivery actions requested.'",
+            "If you DID perform an action, reply ONLY with a short summary like: 'Opened YouTube for Java overriding tutorial.' Do NOT say 'No delivery actions requested.'," +
+                    "\"TELEGRAM RULES:\",\n" +
+                    "            \"The sendTelegram tool always sends messages to a fixed group chat.\",\n" +
+                    "            \"If the user asks to direct a message to a specific person (e.g., 'tell Suriya'), you MUST start the messageText by tagging them (e.g., 'Hey Suriya,')",
+
             "If you DID perform an action, reply ONLY with a short summary like: 'Opened YouTube for Java overriding tutorial.' Do NOT say 'No delivery actions requested.'",
             "If the user's prompt relates to finding, opening, watching, or getting a YouTube video (e.g. 'give me', 'find me', 'show me', 'open', 'play', 'recommend'), use the openYoutubeVideo tool with the topic or query from their request.",
             "When using openYoutubeVideo, ALWAYS pass the user's original search intent as a plain text query (e.g. 'best youtube video'). NEVER pass a URL as the search query, even if the final content contains one.",
@@ -448,3 +453,4 @@ class AppTools {
         }
     }
 }
+
