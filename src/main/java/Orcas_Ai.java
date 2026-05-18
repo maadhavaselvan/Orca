@@ -44,6 +44,8 @@ import java.awt.Desktop;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 abstract class Ai {
     protected ChatModel Ai;
     private final String name;
@@ -209,7 +211,7 @@ public class Orcas_Ai
     public static void main(String[] args) {
         System.setProperty("org.slf4j.simpleLogger.log.dev.langchain4j", "error");
         dedicatedAiChat gemini=new dedicatedAiChat("gemini","gemini-2.5-flash");
-        OpenAiChat groq=new OpenAiChat("groq","https://api.groq.com/openai/v1","llama-3.1-8b-instant");
+        OpenAiChat groq=new OpenAiChat("groq","https://api.groq.com/openai/v1","llama-3.3-70b-versatile");
         OpenAiChat cohere=new OpenAiChat("cohere","https://api.cohere.com/compatibility/v1","command-r7b-12-2024");
         dedicatedAiChat mistral=new dedicatedAiChat("mistral","open-mistral-nemo");
         OpenAiChat openrouter = new OpenAiChat("openrouter", "https://openrouter.ai/api/v1", "meta-llama/llama-3.1-8b-instruct:free");
@@ -300,14 +302,11 @@ interface DispatchAgent {
 
             "If the user requested to post to Discord, use the sendDiscord tool.",
 
-            "If the user asked for a video, tutorial, or wants to watch something, use the openYouTubeVideo tool.",
-            "For video requests, craft a precise YouTube search query based on the topic — include helpful terms like the programming language, concept name, and 'tutorial' or 'explained'.",
-            "Example: if the user says 'I want the best Java video for overriding', call openYouTubeVideo with 'Java method overriding tutorial best explained'.",
 
             "Call each tool at most ONCE. Do not repeat tool calls unless sending to multiple different people.",
             "If the user did NOT explicitly ask to email, post, or find a video, do NOT use any tools. Just reply: 'No delivery actions requested.'",
-            "If you DID perform an action, reply ONLY with a short summary like: 'Opened YouTube for Java overriding tutorial.' Do NOT say 'No delivery actions requested.'"
-    })
+            "If you DID perform an action, reply ONLY with a short summary like: 'Opened YouTube for Java overriding tutorial.' Do NOT say 'No delivery actions requested.'",
+            "If the user requested to find or open a YouTube video, extract the video name/topic from the user's request and pass it as a search query to the openYoutubeVideo tool."    })
     String dispatch(String context);
 }
 
@@ -366,25 +365,47 @@ class AppTools {
             return "Failed to send Discord message. Error: " + e.getMessage();
         }
     }
-    @Tool("Searches YouTube for the best video matching the user's topic and opens it in the browser.")
-    public String openYouTubeVideo(String searchQuery) {
-        System.out.println("\n--> [AGENT] Searching YouTube for: " + searchQuery + "...");
+    @Tool("Opens the first matching YouTube video directly in the default browser.")
+    public String openYoutubeVideo(String searchQuery) {
         try {
             String encoded = URLEncoder.encode(searchQuery, StandardCharsets.UTF_8);
-            String url = "https://www.youtube.com/results?search_query=" + encoded;
-            URI uri = new URI(url);
+            String searchUrl = "https://www.youtube.com/results?search_query=" + encoded;
+
+            // Fetch search results page to extract the first video ID
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .followRedirects(HttpClient.Redirect.NORMAL)
+                    .build();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(searchUrl))
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                    .GET()
+                    .build();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            // Extract the first videoId from the page HTML
+            Pattern pattern = Pattern.compile("\"videoId\":\"([a-zA-Z0-9_-]{11})\"");
+            Matcher matcher = pattern.matcher(response.body());
+
+            String videoUrl;
+            if (matcher.find()) {
+                String videoId = matcher.group(1);
+                videoUrl = "https://www.youtube.com/watch?v=" + videoId;
+            } else {
+                // Fallback: open search page if no video ID found
+                videoUrl = searchUrl;
+                System.out.println("[WARN] Could not extract video ID, falling back to search page.");
+            }
 
             if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-                Desktop.getDesktop().browse(uri);
-                return "Success: Opened YouTube search for \"" + searchQuery + "\"";
+                Desktop.getDesktop().browse(new URI(videoUrl));
             } else {
-                // Fallback for Linux servers without a display
-                Runtime.getRuntime().exec(new String[]{"xdg-open", url});
-                return "Success: Launched browser for \"" + searchQuery + "\" via xdg-open";
+                Runtime.getRuntime().exec(new String[]{"xdg-open", videoUrl});
             }
+            return "Opened YouTube video for: " + searchQuery + " → " + videoUrl;
+
         } catch (Exception e) {
-            return "Failed to open video: " + e.getMessage();
+            return "Error opening URL: " + e.getMessage();
         }
     }
-
 }
