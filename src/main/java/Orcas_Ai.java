@@ -44,6 +44,8 @@ import java.awt.Desktop;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 abstract class Ai {
     protected ChatModel Ai;
     private final String name;
@@ -184,7 +186,8 @@ public class Orcas_Ai
                         "- Do NOT explain your classification or your reasoning\n" +
                         "- Do NOT mention which responses you used or preferred\n" +
                         "- Return ONLY the final answer and absolutely nothing else\n"+
-                        "- If it exceeds 1900 characters rewrite it so it doesnt exceed 1900 characters");
+                        "- If it exceeds 1900 characters rewrite it so it doesnt exceed 1900 characters" +
+                        "- If the user's request is purely to find a YouTube video, return ONLY the YouTube URL and nothing else.");
 
         judgeContext.add(system);
         judgeContext.add(userMessage(UMessage));
@@ -195,7 +198,7 @@ public class Orcas_Ai
                 break;
             } catch (Exception e) {
                 if(i!=0)
-                    System.out.println(AllAi[i].getName()+" busy right now so judge Ai is being replaced by"+AllAi[i-1].getName());
+                    System.out.println(AllAi[i].getName()+" busy right now so judge Ai is being replaced by "+AllAi[i-1].getName());
                 else {
                     System.out.println("All 6 Ai's are busy, so this program will now close");
                     System.exit(0);
@@ -209,7 +212,7 @@ public class Orcas_Ai
     public static void main(String[] args) {
         System.setProperty("org.slf4j.simpleLogger.log.dev.langchain4j", "error");
         dedicatedAiChat gemini=new dedicatedAiChat("gemini","gemini-2.5-flash");
-        OpenAiChat groq=new OpenAiChat("groq","https://api.groq.com/openai/v1","llama-3.1-8b-instant");
+        OpenAiChat groq=new OpenAiChat("groq","https://api.groq.com/openai/v1","llama-3.3-70b-versatile");
         OpenAiChat cohere=new OpenAiChat("cohere","https://api.cohere.com/compatibility/v1","command-r7b-12-2024");
         dedicatedAiChat mistral=new dedicatedAiChat("mistral","open-mistral-nemo");
         OpenAiChat openrouter = new OpenAiChat("openrouter", "https://openrouter.ai/api/v1", "meta-llama/llama-3.1-8b-instruct:free");
@@ -261,8 +264,9 @@ public class Orcas_Ai
 
         System.out.println("\n🤖 Handing over to Dispatch Agent...");
         String deliveryResult = "Failed: All APIs are out of tokens.";
-        String context = "These are the Request given by user: \"" + allUserPrompt + "\"\n\nFinal Approved Content: \"" + finalOutput + "\"";
-
+        String context = "User's original requests (in order):\n" + allUserPrompt +
+                "\n\nFinal Approved Content: \"" + finalOutput + "\"\n\n" +
+                "IMPORTANT: For video requests, use the topic from the user's prompt as the search query, not any URL from the final content.";
         for (int i = AllAi.length - 1; i >= 0; i--) {
             try {
                 DispatchAgent agent = AiServices.builder(DispatchAgent.class)
@@ -300,14 +304,13 @@ interface DispatchAgent {
 
             "If the user requested to post to Discord, use the sendDiscord tool.",
 
-            "If the user asked for a video, tutorial, or wants to watch something, use the openYouTubeVideo tool.",
-            "For video requests, craft a precise YouTube search query based on the topic — include helpful terms like the programming language, concept name, and 'tutorial' or 'explained'.",
-            "Example: if the user says 'I want the best Java video for overriding', call openYouTubeVideo with 'Java method overriding tutorial best explained'.",
 
             "Call each tool at most ONCE. Do not repeat tool calls unless sending to multiple different people.",
             "If the user did NOT explicitly ask to email, post, or find a video, do NOT use any tools. Just reply: 'No delivery actions requested.'",
-            "If you DID perform an action, reply ONLY with a short summary like: 'Opened YouTube for Java overriding tutorial.' Do NOT say 'No delivery actions requested.'"
-    })
+            "If you DID perform an action, reply ONLY with a short summary like: 'Opened YouTube for Java overriding tutorial.' Do NOT say 'No delivery actions requested.'",
+            "If the user's prompt relates to finding, opening, watching, or getting a YouTube video (e.g. 'give me', 'find me', 'show me', 'open', 'play', 'recommend'), use the openYoutubeVideo tool with the topic or query from their request.",
+            "When using openYoutubeVideo, ALWAYS pass the user's original search intent as a plain text query (e.g. 'best youtube video'). NEVER pass a URL as the search query, even if the final content contains one.",
+            "If the user requested both a YouTube video AND another action (email or Discord), call both tools independently. Do not skip either."})
     String dispatch(String context);
 }
 
@@ -366,25 +369,47 @@ class AppTools {
             return "Failed to send Discord message. Error: " + e.getMessage();
         }
     }
-    @Tool("Searches YouTube for the best video matching the user's topic and opens it in the browser.")
-    public String openYouTubeVideo(String searchQuery) {
-        System.out.println("\n--> [AGENT] Searching YouTube for: " + searchQuery + "...");
+    @Tool("Opens the first matching YouTube video directly in the default browser.")
+    public String openYoutubeVideo(String searchQuery) {
         try {
             String encoded = URLEncoder.encode(searchQuery, StandardCharsets.UTF_8);
-            String url = "https://www.youtube.com/results?search_query=" + encoded;
-            URI uri = new URI(url);
+            String searchUrl = "https://www.youtube.com/results?search_query=" + encoded;
+
+            // Fetch search results page to extract the first video ID
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .followRedirects(HttpClient.Redirect.NORMAL)
+                    .build();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(searchUrl))
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                    .GET()
+                    .build();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+
+            // Extract the first videoId from the page HTML
+            Pattern pattern = Pattern.compile("\"videoId\":\"([a-zA-Z0-9_-]{11})\"");
+            Matcher matcher = pattern.matcher(response.body());
+
+            String videoUrl;
+            if (matcher.find()) {
+                String videoId = matcher.group(1);
+                videoUrl = "https://www.youtube.com/watch?v=" + videoId;
+            } else {
+                // Fallback: open search page if no video ID found
+                videoUrl = searchUrl;
+                System.out.println("[WARN] Could not extract video ID, falling back to search page.");
+            }
 
             if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-                Desktop.getDesktop().browse(uri);
-                return "Success: Opened YouTube search for \"" + searchQuery + "\"";
+                Desktop.getDesktop().browse(new URI(videoUrl));
             } else {
-                // Fallback for Linux servers without a display
-                Runtime.getRuntime().exec(new String[]{"xdg-open", url});
-                return "Success: Launched browser for \"" + searchQuery + "\" via xdg-open";
+                Runtime.getRuntime().exec(new String[]{"xdg-open", videoUrl});
             }
+            return "Opened YouTube video for: " + searchQuery + " → " + videoUrl;
+
         } catch (Exception e) {
-            return "Failed to open video: " + e.getMessage();
+            return "Error opening URL: " + e.getMessage();
         }
     }
-
 }
