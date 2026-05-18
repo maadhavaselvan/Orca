@@ -307,6 +307,11 @@ interface DispatchAgent {
 
             "Call each tool at most ONCE. Do not repeat tool calls unless sending to multiple different people.",
             "If the user did NOT explicitly ask to email, post, or find a video, do NOT use any tools. Just reply: 'No delivery actions requested.'",
+            "If you DID perform an action, reply ONLY with a short summary like: 'Opened YouTube for Java overriding tutorial.' Do NOT say 'No delivery actions requested.'," +
+                    "\"TELEGRAM RULES:\",\n" +
+                    "            \"The sendTelegram tool always sends messages to a fixed group chat.\",\n" +
+                    "            \"If the user asks to direct a message to a specific person (e.g., 'tell Suriya'), you MUST start the messageText by tagging them (e.g., 'Hey Suriya,')",
+
             "If you DID perform an action, reply ONLY with a short summary like: 'Opened YouTube for Java overriding tutorial.' Do NOT say 'No delivery actions requested.'",
             "If the user's prompt relates to finding, opening, watching, or getting a YouTube video (e.g. 'give me', 'find me', 'show me', 'open', 'play', 'recommend'), use the openYoutubeVideo tool with the topic or query from their request.",
             "When using openYoutubeVideo, ALWAYS pass the user's original search intent as a plain text query (e.g. 'best youtube video'). NEVER pass a URL as the search query, even if the final content contains one.",
@@ -412,4 +417,37 @@ class AppTools {
             return "Error opening URL: " + e.getMessage();
         }
     }
+    @Tool("Sends a text message to our fixed Telegram group chat.")
+    public String sendTelegram(String messageText) {
+        System.out.println("\n--> [AGENT] Sending message to Telegram group...");
+        try {
+            String botToken = System.getenv("TELEGRAM_BOT_TOKEN");
+            // Hardcode it to only use the environment variable
+            String targetChatId = System.getenv("TELEGRAM_CHAT_ID");
+            String apiUrl = "https://api.telegram.org/bot" + botToken + "/sendMessage";
+
+            ObjectMapper mapper = new ObjectMapper();
+            String jsonBody = mapper.writeValueAsString(Map.of(
+                    "chat_id", targetChatId,
+                    "text", messageText
+            ));
+
+            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(apiUrl))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                    .build();
+
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            var root = mapper.readTree(response.body());
+            boolean ok = root.path("ok").asBoolean(false);
+            return ok
+                    ? "Successfully sent Telegram message to chat " + targetChatId + "."
+                    : "Failed to send Telegram message. Response: " + response.body();
+        } catch (Exception e) {
+            return "Failed to send Telegram message. Error: " + e.getMessage();
+        }
+    }
 }
+
