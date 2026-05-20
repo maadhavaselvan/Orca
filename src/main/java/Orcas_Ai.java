@@ -1,28 +1,7 @@
-// LangChain4j Core
-import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.model.chat.request.ChatRequest;
-import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.data.message.ChatMessage;
 
-// Static imports for message helpers
 import static dev.langchain4j.data.message.SystemMessage.systemMessage;
 import static dev.langchain4j.data.message.UserMessage.userMessage;
-
-// Google Gemini
-import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
-import dev.langchain4j.model.mistralai.MistralAiChatModel;
-// OpenAI-compatible (used for Groq)
-import dev.langchain4j.model.openai.OpenAiChatModel;
-
-import java.net.URI;
-import java.net.http.HttpClient;// Don't forget to add multithreading
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
-import java.util.Map;
-
-
 
 import java.util.Scanner;
 import dev.langchain4j.memory.ChatMemory;
@@ -32,102 +11,21 @@ import java.util.List;
 import java.util.ArrayList;
 import static dev.langchain4j.data.message.AiMessage.aiMessage;
 
-// --- NEW IMPORTS FOR THE AGENT ---
 import dev.langchain4j.service.AiServices;
-import dev.langchain4j.agent.tool.Tool;
-import dev.langchain4j.service.SystemMessage;
-import jakarta.mail.*;
-import jakarta.mail.internet.*;
-import java.util.Properties;
-// ---------------------------------
-import java.awt.Desktop;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
 
-import java.util.regex.Pattern;
-import java.util.regex.Matcher;
-abstract class Ai {
-    protected ChatModel Ai;
-    private final String name;
-    protected abstract  void buildModel();
-    ChatResponse Respond(List<ChatMessage> user)
-    {
-        return Ai.chat(ChatRequest.builder()
-                .messages(user)
-                .build());
-    }
-    Ai(String name)
-    {
-        this.name=name;
-    }
-    public String getName()
-    {
-        return name;
-    }
-}
-class OpenAiChat extends Ai
-{
-    String baseUrl;
-    String modelName;
-    OpenAiChat(String name,String baseUrl,String modelName)
-    {
-        super(name);
-        this.baseUrl=baseUrl;
-        this.modelName=modelName;
-        buildModel();
-    }
-    protected void buildModel()
-    {
-        this.Ai=OpenAiChatModel.builder()
-                .baseUrl(baseUrl)
-                .apiKey(System.getenv(getName().toUpperCase()+"_API_KEY"))
-                .modelName(modelName)
-                .build();
-    }
-}
-class dedicatedAiChat extends Ai
-{
-    String name;
-    String modelName;
-    dedicatedAiChat(String name,String modelName)
-    {
-        super(name);
-        this.name=name;
-        this.modelName=modelName;
-        buildModel();
-    }
-    protected void buildModel()
-    {
-        switch (name.toLowerCase()) {
-            case "gemini":
-            case "google":
-                this.Ai = GoogleAiGeminiChatModel.builder()
-                        .apiKey(System.getenv("GOOGLE_API_KEY"))
-                        .modelName(modelName)
-                        .build();
-                break;
-            case "mistral":
-                this.Ai = MistralAiChatModel.builder()
-                        .apiKey(System.getenv("MISTRAL_API_KEY"))
-                        .modelName(modelName)
-                        .build();
-                break;
-            default:
-                System.out.println("Sorry we are working on adding support to that Ai Model");
-        }
-    }
-}
 
+import model.*;
+import dispatch.*;
 public class Orcas_Ai
 {
     private static final Scanner sc=new Scanner(System.in);
     private static final ChatMemory memory = TokenWindowChatMemory.builder()
             .maxTokens(4000, new OpenAiTokenCountEstimator("gpt-3.5-turbo"))
             .build();
-    static String UserPrompt = "";
-    static String allUserPrompt="";
-    static int count=0;
-    private static String Ai_Decision(Ai[] AllAi,ChatMessage system)
+    private static String UserPrompt = "";
+    private static String allUserPrompt="";
+    private static int count=0;
+    private static String Ai_Decision(model.Ai[] AllAi,ChatMessage system)
     {
         count++;
         System.out.print("Enter the prompt:");
@@ -270,8 +168,8 @@ public class Orcas_Ai
         for (int i = AllAi.length - 1; i >= 0; i--) {
             try {
                 DispatchAgent agent = AiServices.builder(DispatchAgent.class)
-                        .chatModel(AllAi[i].Ai)
-                        .tools(new AppTools())
+                        .chatModel(AllAi[i].getChatModel())
+                        .tools(new DiscordTool(),new EmailTool(),new TelegramTool(),new YoutubeTool())
                         .build();
 
                 deliveryResult = agent.dispatch(context);
@@ -289,168 +187,4 @@ public class Orcas_Ai
     }
 }
 
-
-interface DispatchAgent {
-    @SystemMessage({
-            "You are an intelligent dispatch agent running at the very end of a pipeline.",
-            "You will be given a numbered list of user prompts and the final approved content.",
-            "The prompts are in order — LATER prompts about delivery override EARLIER ones.",
-            "If a prompt contains words like 'i meant', 'instead', 'only', 'not' → it REPLACES the previous delivery target.",
-            "If a prompt contains words like 'also', 'too', 'and', 'as well' → it ADDS to the previous delivery target.",
-
-            "If the user requested to send an email, carefully extract the exact, real email addresses from the context.",
-            "NEVER use placeholders like '[Your Email Address]'. You must use the actual email addresses provided.",
-            "Use the sendEmail tool to send the email.",
-
-            "If the user requested to post to Discord, use the sendDiscord tool.",
-
-            "TELEGRAM RULES:",
-            "The sendTelegram tool always sends messages to a fixed group chat.",
-            "If the user asks to direct a message to a specific person (e.g., 'tell Suriya'), you MUST start the messageText by tagging them (e.g., 'Hey Suriya,').",
-
-            "Call each tool at most ONCE. Do not repeat tool calls unless sending to multiple different people.",
-            "If the user did NOT explicitly ask to email, post, or find a video, do NOT use any tools. Just reply: 'No delivery actions requested.'",
-            "If you DID perform an action, reply ONLY with a short summary like: 'Opened YouTube for Java overriding tutorial.' Do NOT say 'No delivery actions requested.'," +
-                    "\"TELEGRAM RULES:\",\n" +
-                    "            \"The sendTelegram tool always sends messages to a fixed group chat.\",\n" +
-                    "            \"If the user asks to direct a message to a specific person (e.g., 'tell Suriya'), you MUST start the messageText by tagging them (e.g., 'Hey Suriya,')",
-
-            "If you DID perform an action, reply ONLY with a short summary like: 'Opened YouTube for Java overriding tutorial.' Do NOT say 'No delivery actions requested.'",
-            "If the user's prompt relates to finding, opening, watching, or getting a YouTube video (e.g. 'give me', 'find me', 'show me', 'open', 'play', 'recommend'), use the openYoutubeVideo tool with the topic or query from their request.",
-            "When using openYoutubeVideo, ALWAYS pass the user's original search intent as a plain text query (e.g. 'best youtube video'). NEVER pass a URL as the search query, even if the final content contains one.",
-            "If the user requested both a YouTube video AND another action (email or Discord), call both tools independently. Do not skip either."})
-    String dispatch(String context);
-}
-
-class AppTools {
-    @Tool("Sends an email to a specific email address with a subject and body.")
-    public String sendEmail(String toEmail, String subject, String body) {
-        System.out.println("\n--> [AGENT] Sending Email to " + toEmail + "...");
-        try {
-            final String fromEmail = System.getenv("gmail");
-            final String appPassword = System.getenv("password");
-
-            Properties props = new Properties();
-            props.put("mail.smtp.host", "smtp.gmail.com");
-            props.put("mail.smtp.port", "587");
-            props.put("mail.smtp.auth", "true");
-            props.put("mail.smtp.starttls.enable", "true");
-            props.put("mail.smtp.ssl.protocols", "TLSv1.2");
-
-            Session session = Session.getInstance(props, new Authenticator() {
-                protected PasswordAuthentication getPasswordAuthentication() {
-                    return new PasswordAuthentication(fromEmail, appPassword);
-                }
-            });
-            toEmail = toEmail.replace(" ", ",");
-            Message message = new MimeMessage(session);
-            message.setFrom(new InternetAddress(fromEmail));
-            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(toEmail));
-            message.setSubject(subject);
-            message.setText(body);
-
-            Transport.send(message);
-            return "Success: Email sent to " + toEmail;
-        } catch (Exception e) {
-            return "Failed to send email: " + e.getMessage();
-        }
-    }
-
-    @Tool("Sends a text message to the Discord webhook.")
-    public String sendDiscord(String messageText) {
-        System.out.println("\n--> [AGENT] Sending message to Discord...");
-        try {
-            String DISCORD_WEBHOOK_URL = System.getenv("discord2");
-            ObjectMapper mapper = new ObjectMapper();
-            String jsonBody = mapper.writeValueAsString(Map.of("content", messageText));
-
-            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(DISCORD_WEBHOOK_URL))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                    .build();
-
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-            return response.statusCode() == 204 ? "Successfully posted to Discord." : "Failed to post to Discord. Status: " + response.statusCode();
-        } catch (Exception e) {
-            return "Failed to send Discord message. Error: " + e.getMessage();
-        }
-    }
-    @Tool("Opens the first matching YouTube video directly in the default browser.")
-    public String openYoutubeVideo(String searchQuery) {
-        try {
-            String encoded = URLEncoder.encode(searchQuery, StandardCharsets.UTF_8);
-            String searchUrl = "https://www.youtube.com/results?search_query=" + encoded;
-
-            // Fetch search results page to extract the first video ID
-            HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(10))
-                    .followRedirects(HttpClient.Redirect.NORMAL)
-                    .build();
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(searchUrl))
-                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-                    .GET()
-                    .build();
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-
-            // Extract the first videoId from the page HTML
-            Pattern pattern = Pattern.compile("\"videoId\":\"([a-zA-Z0-9_-]{11})\"");
-            Matcher matcher = pattern.matcher(response.body());
-
-            String videoUrl;
-            if (matcher.find()) {
-                String videoId = matcher.group(1);
-                videoUrl = "https://www.youtube.com/watch?v=" + videoId;
-            } else {
-                // Fallback: open search page if no video ID found
-                videoUrl = searchUrl;
-                System.out.println("[WARN] Could not extract video ID, falling back to search page.");
-            }
-
-            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
-                Desktop.getDesktop().browse(new URI(videoUrl));
-            } else {
-                Runtime.getRuntime().exec(new String[]{"xdg-open", videoUrl});
-            }
-            return "Opened YouTube video for: " + searchQuery + " → " + videoUrl;
-
-        } catch (Exception e) {
-            return "Error opening URL: " + e.getMessage();
-        }
-    }
-    @Tool("Sends a text message to our fixed Telegram group chat.")
-    public String sendTelegram(String messageText) {
-        System.out.println("\n--> [AGENT] Sending message to Telegram group...");
-        try {
-            String botToken = System.getenv("TELEGRAM_BOT_TOKEN");
-            // Hardcode it to only use the environment variable
-            String targetChatId = System.getenv("TELEGRAM_CHAT_ID");
-            String apiUrl = "https://api.telegram.org/bot" + botToken + "/sendMessage";
-
-            ObjectMapper mapper = new ObjectMapper();
-            String jsonBody = mapper.writeValueAsString(Map.of(
-                    "chat_id", targetChatId,
-                    "text", messageText
-            ));
-
-            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(apiUrl))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                    .build();
-
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-            var root = mapper.readTree(response.body());
-            boolean ok = root.path("ok").asBoolean(false);
-            return ok
-                    ? "Successfully sent Telegram message to chat " + targetChatId + "."
-                    : "Failed to send Telegram message. Response: " + response.body();
-        } catch (Exception e) {
-            return "Failed to send Telegram message. Error: " + e.getMessage();
-        }
-    }
-}
 
