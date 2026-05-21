@@ -1,47 +1,62 @@
 package dispatch;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.langchain4j.agent.tool.Tool;
 
+import dev.langchain4j.agent.tool.Tool;
+import java.awt.*;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class YoutubeTool {
-    @Tool("Sends a text message to our fixed Telegram group chat.")
-    public String sendTelegram(String messageText) {
-        System.out.println("\n--> [AGENT] Sending message to Telegram group...");
+    @Tool("Opens the first matching YouTube video directly in the default browser.")
+    public String openYoutubeVideo(String searchQuery) {
         try {
-            String botToken = System.getenv("TELEGRAM_BOT_TOKEN");
-            // Hardcode it to only use the environment variable
-            String targetChatId = System.getenv("TELEGRAM_CHAT_ID");
-            String apiUrl = "https://api.telegram.org/bot" + botToken + "/sendMessage";
+            String encoded = URLEncoder.encode(searchQuery, StandardCharsets.UTF_8);
+            String searchUrl = "https://www.youtube.com/results?search_query=" + encoded;
 
-            ObjectMapper mapper = new ObjectMapper();
-            String jsonBody = mapper.writeValueAsString(Map.of(
-                    "chat_id", targetChatId,
-                    "text", messageText
-            ));
-
-            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(apiUrl))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+            // Fetch search results page to extract the first video ID
+            HttpClient client = HttpClient.newBuilder()
+                    .connectTimeout(Duration.ofSeconds(10))
+                    .followRedirects(HttpClient.Redirect.NORMAL)
                     .build();
-
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(searchUrl))
+                    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+                    .GET()
+                    .build();
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-            var root = mapper.readTree(response.body());
-            boolean ok = root.path("ok").asBoolean(false);
-            return ok
-                    ? "Successfully sent Telegram message to chat " + targetChatId + "."
-                    : "Failed to send Telegram message. Response: " + response.body();
+
+            // Extract the first videoId from the page HTML
+            Pattern pattern = Pattern.compile("\"videoId\":\"([a-zA-Z0-9_-]{11})\"");
+            Matcher matcher = pattern.matcher(response.body());
+
+            String videoUrl;
+            if (matcher.find()) {
+                String videoId = matcher.group(1);
+                videoUrl = "https://www.youtube.com/watch?v=" + videoId;
+            } else {
+                // Fallback: open search page if no video ID found
+                videoUrl = searchUrl;
+                System.out.println("[WARN] Could not extract video ID, falling back to search page.");
+            }
+
+            if (Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                Desktop.getDesktop().browse(new URI(videoUrl));
+            }
+            else {
+                Runtime.getRuntime().exec("firefox " + videoUrl);
+            }
+            return "Opened YouTube video for: " + searchQuery + " → " + videoUrl;
+
         }
         catch (Exception e) {
-            return "Failed to send Telegram message. Error: " + e.getMessage();
+            return "Error opening URL: " + e.getMessage();
         }
     }
 }

@@ -1,8 +1,6 @@
 import dev.langchain4j.data.message.ChatMessage;
-
 import static dev.langchain4j.data.message.SystemMessage.systemMessage;
 import static dev.langchain4j.data.message.UserMessage.userMessage;
-
 import java.util.Scanner;
 import dev.langchain4j.memory.ChatMemory;
 import dev.langchain4j.memory.chat.TokenWindowChatMemory;
@@ -10,12 +8,11 @@ import dev.langchain4j.model.openai.OpenAiTokenCountEstimator;
 import java.util.List;
 import java.util.ArrayList;
 import static dev.langchain4j.data.message.AiMessage.aiMessage;
-
 import dev.langchain4j.service.AiServices;
-
 
 import model.*;
 import dispatch.*;
+
 public class Orcas_Ai
 {
     private static final Scanner sc=new Scanner(System.in);
@@ -47,7 +44,7 @@ public class Orcas_Ai
                 System.out.println("The server at "+AllAi[i].getName()+" is Overloaded, so this output is being skipped sorry for the inconvenience");
             }
         }
-        List<ChatMessage> judgeContext = new ArrayList<>();
+        List<ChatMessage> judgeContext = new ArrayList<>();//Sir might ask why you didnt use normal array
         system = systemMessage(
                 "You are an expert response evaluator and synthesizer. You will receive a user prompt followed by 5 AI-generated responses.\n" +
                         "\n" +
@@ -85,7 +82,8 @@ public class Orcas_Ai
                         "- Do NOT mention which responses you used or preferred\n" +
                         "- Return ONLY the final answer and absolutely nothing else\n"+
                         "- If it exceeds 1900 characters rewrite it so it doesnt exceed 1900 characters" +
-                        "- If the user's request is purely to find a YouTube video, return ONLY the YouTube URL and nothing else.");
+                        "- If the user's request is purely to find a YouTube video, return the search queries related to the specific video such that video should come as the first video in the algorithm");
+
 
         judgeContext.add(system);
         judgeContext.add(userMessage(UMessage));
@@ -163,8 +161,7 @@ public class Orcas_Ai
         System.out.println("\n🤖 Handing over to Dispatch Agent...");
         String deliveryResult = "Failed: All APIs are out of tokens.";
         String context = "User's original requests (in order):\n" + allUserPrompt +
-                "\n\nFinal Approved Content: \"" + finalOutput + "\"\n\n" +
-                "IMPORTANT: For video requests, use the topic from the user's prompt as the search query, not any URL from the final content.";
+                "\n\nFinal Approved Content: \"" + finalOutput + "\"\n\n"+"For Multiple Youtube video pick any one of the youtube video";
         for (int i = AllAi.length - 1; i >= 0; i--) {
             try {
                 DispatchAgent agent = AiServices.builder(DispatchAgent.class)
