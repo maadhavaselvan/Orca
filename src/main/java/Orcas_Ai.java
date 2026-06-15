@@ -46,8 +46,10 @@ public class Orcas_Ai
     private static String UserPrompt = "";
     private static String allUserPrompt="";
     private static int count=0;
+    private static int skipAi;
     private static String Ai_Decision(model.Ai[] AllAi,ChatMessage system)
     {
+        skipAi=AllAi.length-1;
         count++;
         System.out.print("Enter the prompt:");
         UserPrompt = sc.nextLine();
@@ -119,13 +121,16 @@ public class Orcas_Ai
         judgeContext.add(system);
         judgeContext.add(userMessage(UMessage));
         String finalOutput="All Ai's are busy so no output";
-        for(int i=AllAi.length-1;i>=0;i--) {
+        for(int i=skipAi;i>=0;i--) {
             try {
                 finalOutput = AllAi[i].Respond(judgeContext).aiMessage().text();
                 break;
-            } catch (Exception e) {
-                if(i!=0)
-                    System.out.println(AllAi[i].getName()+" busy right now so judge Ai is being replaced by "+AllAi[i-1].getName());
+            }
+            catch (Exception e) {
+                if(i!=0) {
+                    System.out.println(AllAi[i].getName() + " busy right now so judge Ai is being replaced by " + AllAi[i - 1].getName());
+                    skipAi--;
+                }
                 else {
                     System.out.println("All 6 Ai's are busy, so this program will now close");
                     System.exit(0);
@@ -137,12 +142,14 @@ public class Orcas_Ai
         return finalOutput;
     }
     private static Ai[] AllAi=new Ai[6];
+    private static Ai OneAi;
     private static int Aicount=0;
     private static void AiInList(String name,String modelName)
     {
         try
         {
-            AllAi[Aicount++]=new dedicatedAiChat(name, modelName);
+            OneAi=new dedicatedAiChat(name, modelName);
+            AllAi[Aicount++]=OneAi;
         }
         catch(InvalidAiException e)
         {
@@ -153,7 +160,8 @@ public class Orcas_Ai
     {
         try
         {
-            AllAi[Aicount++]=new OpenAiChat(name,baseUrl,modelName);
+            OneAi=new OpenAiChat(name,baseUrl,modelName);
+            AllAi[Aicount++]=OneAi;
         }
         catch(InvalidAiException e)
         {
@@ -216,20 +224,19 @@ public class Orcas_Ai
         String deliveryResult = "Failed: All APIs are out of tokens.";
         String context = "User's original requests (in order):\n" + allUserPrompt +
                 "\n\nFinal Approved Content: \"" + finalOutput + "\"\n\n"+"For Multiple Youtube video pick any one of the youtube video";
-        for (int i = AllAi.length - 1; i >= 0; i--) {
+        for (int i = skipAi; i >= 0; i--) {
             try {
                 DispatchAgent agent = AiServices.builder(DispatchAgent.class)
                         .chatModel(AllAi[i].getChatModel())
                         .tools(new DiscordTool(),new EmailTool(),new TelegramTool(),new YoutubeTool())
                         .build();
-
                 deliveryResult = agent.dispatch(context);
-
                 System.out.println("-> Successfully used [" + AllAi[i].getName() + "] for dispatch.");
                 break;
-
-            } catch (Exception e) {
+            }
+            catch (Exception e) {
                 System.out.println("-> [" + AllAi[i].getName() + "] is out of tokens or busy. Switching to next AI...");
+                skipAi--;
             }
         }
 
