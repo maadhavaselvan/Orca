@@ -12,7 +12,31 @@ import dev.langchain4j.service.AiServices;
 
 import model.*;
 import dispatch.*;
-
+class Threads implements Runnable
+{
+    Thread t;
+    model.Ai Ais;
+    String UMessage="";
+    List<ChatMessage> history;
+    int i;
+    Threads(model.Ai Ais,int i,List<ChatMessage> history){
+        t=new Thread(this,"Calling Ai");
+        this.Ais=Ais;
+        this.i=i;
+        this.history=history;
+    }
+    @Override
+    public void run()
+    {
+        try {
+            UMessage += "Answer " + (i + 1) + ": " + (Ais.Respond(history).aiMessage().text());
+        }
+        catch(Exception e)
+        {
+            System.out.println("The server at "+Ais.getName()+" is Overloaded, so this output is being skipped sorry for the inconvenience");
+        }
+    }
+}
 public class Orcas_Ai
 {
     private static final Scanner sc=new Scanner(System.in);
@@ -34,17 +58,24 @@ public class Orcas_Ai
         List<ChatMessage> history = new ArrayList<>();
         history.add(system);
         history.addAll(memory.messages());
+        Threads allT[]=new Threads[AllAi.length];
         for (int i=0;i<AllAi.length-1;i++)
         {
-            try {
-                UMessage += "Answer " + (i + 1) + ": " + (AllAi[i].Respond(history).aiMessage().text());
-            }
-            catch(Exception e)
-            {
-                System.out.println("The server at "+AllAi[i].getName()+" is Overloaded, so this output is being skipped sorry for the inconvenience");
+            allT[i]=new Threads(AllAi[i],i,history);
+            allT[i].t.start();
+        }
+        try {
+            for (int i = 0; i < AllAi.length - 1; i++) {
+                allT[i].t.join();
+                UMessage += "\n" + allT[i].UMessage;
             }
         }
-        List<ChatMessage> judgeContext = new ArrayList<>();//Sir might ask why you didnt use normal array
+        catch (InterruptedException e)
+        {
+            System.out.println("Main thread interrupted ");
+
+        }
+        List<ChatMessage> judgeContext = new ArrayList<>();
         system = systemMessage(
                 "You are an expert response evaluator and synthesizer. You will receive a user prompt followed by 5 AI-generated responses.\n" +
                         "\n" +
@@ -105,17 +136,40 @@ public class Orcas_Ai
         System.out.println(finalOutput);
         return finalOutput;
     }
+    private static Ai[] AllAi=new Ai[6];
+    private static int Aicount=0;
+    private static void AiInList(String name,String modelName)
+    {
+        try
+        {
+            AllAi[Aicount++]=new dedicatedAiChat(name, modelName);
+        }
+        catch(InvalidAiException e)
+        {
+            System.out.println(e.getMessage());
+        }
+    }
+    private static void AiInList(String name,String baseUrl,String modelName)
+    {
+        try
+        {
+            AllAi[Aicount++]=new OpenAiChat(name,baseUrl,modelName);
+        }
+        catch(InvalidAiException e)
+        {
+            System.out.println(e.getMessage());
+        }
+    }
     public static void main(String[] args) {
         System.setProperty("org.slf4j.simpleLogger.log.dev.langchain4j", "error");
-        dedicatedAiChat gemini=new dedicatedAiChat("gemini","gemini-2.5-flash");
-        OpenAiChat groq=new OpenAiChat("groq","https://api.groq.com/openai/v1","llama-3.3-70b-versatile");
-        OpenAiChat cohere=new OpenAiChat("cohere","https://api.cohere.com/compatibility/v1","command-r7b-12-2024");
-        dedicatedAiChat mistral=new dedicatedAiChat("mistral","open-mistral-nemo");
-        OpenAiChat openrouter = new OpenAiChat("openrouter", "https://openrouter.ai/api/v1", "meta-llama/llama-3.1-8b-instruct:free");
-        OpenAiChat huggingface=new OpenAiChat("huggingface","https://router.huggingface.co/v1","Qwen/Qwen2.5-7B-Instruct");
+        AiInList("huggingface", "https://router.huggingface.co/v1", "Qwen/Qwen2.5-7B-Instruct");
+        AiInList("cohere", "https://api.cohere.com/compatibility/v1", "command-r7b-12-2024");
+        AiInList("mistral", "open-mistral-nemo");
+        AiInList("openrouter", "https://openrouter.ai/api/v1", "meta-llama/llama-3.1-8b-instruct:free");
+        AiInList("groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile");
+        AiInList("gemini", "gemini-2.5-flash");
         System.out.print("Enter the behaviour you want the Ai to have:");
         ChatMessage system = systemMessage(sc.nextLine());
-        Ai[] AllAi = {huggingface, cohere, mistral, openrouter, groq, gemini};
         String finalOutput;
         while (true)
         {
@@ -148,7 +202,7 @@ public class Orcas_Ai
                     finalOutput = AllAi[i].Respond(trimContext).aiMessage().text();
                     break;
                 } catch (Exception e) {
-                    //Skip this
+                    System.out.println(e.getMessage());
                 }
             }
         }

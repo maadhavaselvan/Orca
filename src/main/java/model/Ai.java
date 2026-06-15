@@ -26,6 +26,6 @@ public abstract class Ai {
         return name;
     }
     public ChatModel getChatModel() {
-        return this.Chatbot;
+        return Chatbot;
     }
 }

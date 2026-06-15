@@ -50,8 +50,7 @@ public class YoutubeTool {
                 Desktop.getDesktop().browse(new URI(videoUrl));
             }
             else {
-                Runtime.getRuntime().exec("firefox " + videoUrl);
-            }
+                Runtime.getRuntime().exec(new String[]{"xdg-open", videoUrl});            }
             return "Opened YouTube video for: " + searchQuery + " → " + videoUrl;
 
         }

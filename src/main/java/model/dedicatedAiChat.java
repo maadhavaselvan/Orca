@@ -12,7 +12,8 @@ public class dedicatedAiChat extends Ai
         this.modelName=modelName;
         buildModel();
     }
-    void buildModel()
+    @Override
+    void buildModel() throws InvalidAiException
     {
         switch (getName().toLowerCase()) {
             case "gemini":
@@ -29,7 +30,7 @@ public class dedicatedAiChat extends Ai
                         .build();
                 break;
             default:
-                System.out.println("Sorry we are working on adding support to that Ai Model");
+                throw new InvalidAiException("Sorry we have not added support to that Ai");
         }
     }
 }
